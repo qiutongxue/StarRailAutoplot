@@ -1,0 +1,12 @@
+[package]
+name = "sr_plot_rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+opencv = { version = "0.93", features = ["clang-runtime"] }
+enigo = "0.2"
+image = "0.25"
+xcap = { path = "../xcap" }
+simple_logger = { version = "5", features = ["colors"] }
+log = "*"
