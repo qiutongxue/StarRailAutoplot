@@ -162,7 +162,7 @@ impl Plot {
                 log::warn!("{}", "鼠标不在窗口内！".bold());
             }
             log::debug!("点击后等待 100ms");
-            thread::sleep(Duration::from_millis(100));
+            thread::sleep(Duration::from_millis(10));
         }
         Ok(())
     }
