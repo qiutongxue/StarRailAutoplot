@@ -4,8 +4,10 @@ use std::fmt::Write;
 use unicode_width::UnicodeWidthStr;
 
 const WELCOME: &str = r#"
+欢迎使用「崩坏：星穹铁道」自动对话程序
+
 请使用「管理员身份」运行此程序
-自动对话需要保持窗口在前台
+需要保持游戏窗口在前台运行
 若游戏为「窗口化」，请确保鼠标位置在游戏窗口内
 "#;
 
