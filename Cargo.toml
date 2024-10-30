@@ -19,3 +19,4 @@ windows = { version = "0.58", features = [
     "Win32_System_Threading",
 ] }
 sysinfo = "0.32"
+unicode-width = "0.2"
