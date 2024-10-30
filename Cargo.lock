@@ -1226,7 +1226,7 @@ dependencies = [
 
 [[package]]
 name = "sr_plot_rs"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "enigo",
  "image",

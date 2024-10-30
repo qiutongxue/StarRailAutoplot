@@ -8,7 +8,7 @@ use image::{codecs::bmp::BmpEncoder, RgbaImage};
 use opencv::core::{Mat, MatTraitConst, Size};
 use opencv::{
     core::Point,
-    imgcodecs::{imdecode, imread, ImreadModes},
+    imgcodecs::{imdecode, ImreadModes},
 };
 
 use crate::{input::Input, screenshot, utils::scale_and_match_template};
@@ -42,9 +42,12 @@ impl Automation {
                 self.screenshot = Some(screenshot);
                 self.screenshot_pos = Some(screenshot_pos);
                 self.screenshot_factor = screenshot_factor;
-                log::debug!("截图成功，耗时：{:.2}s", timer.elapsed().as_secs_f64());
-                log::debug!("screenshot_pos: {:?}", self.screenshot_pos);
-                log::debug!("screenshot_factor: {:.2}", self.screenshot_factor);
+                log::debug!(
+                    "截图成功，耗时：{}ms, 截图区域：{:?}， 缩放比例：{:.2}",
+                    timer.elapsed().as_millis(),
+                    screenshot_pos,
+                    screenshot_factor
+                );
                 break;
             } else {
                 log::error!("截图失败，可能未找到游戏窗口");
@@ -59,7 +62,7 @@ impl Automation {
 
     pub fn find_element(
         &mut self,
-        target: &str,
+        target: (&'static str, &[u8]),
         threshold: f64,
         take_screenshot: bool,
         scale_range: Option<ScaleRange>,
@@ -69,13 +72,13 @@ impl Automation {
             self.take_screenshot(crop);
         }
         log::debug!("scale_range: {:?}", scale_range);
-
-        if !self.cache.contains_key(target) {
-            let result = imread(target, ImreadModes::IMREAD_COLOR as i32).unwrap();
-            self.cache.insert(target.to_string(), result);
+        let (target_name, target) = target;
+        if !self.cache.contains_key(target_name) {
+            let template = imdecode(&target, ImreadModes::IMREAD_COLOR as i32).unwrap();
+            self.cache.insert(target_name.to_string(), template);
         }
 
-        let template = &self.cache[target];
+        let template = self.cache.get(target_name).unwrap();
 
         let screenshot = {
             let image = self.screenshot.as_ref().unwrap();
@@ -94,9 +97,9 @@ impl Automation {
         };
 
         let (match_val, match_loc) =
-            scale_and_match_template(&screenshot, template, threshold, scale_range);
+            scale_and_match_template(&screenshot, &template, threshold, scale_range);
 
-        log::debug!("目标图片：{}, 相似度：{:.2}", target, match_val);
+        log::debug!("目标图片：{}, 相似度：{:.2}", target_name, match_val);
 
         if match_val.is_finite() && match_val >= threshold {
             log::debug!(
@@ -104,7 +107,7 @@ impl Automation {
                 match_loc.x,
                 match_loc.y
             );
-            let (top_left, bottom_right) = self.calculate_positions(template, match_loc);
+            let (top_left, bottom_right) = self.calculate_positions(&template, match_loc);
             return Some((top_left, bottom_right));
         }
 
@@ -113,7 +116,7 @@ impl Automation {
 
     pub fn click_element(
         &mut self,
-        target: &str,
+        target: (&'static str, &[u8]),
         threshold: f64,
         crop: Option<Crop>,
         scale_range: Option<ScaleRange>,

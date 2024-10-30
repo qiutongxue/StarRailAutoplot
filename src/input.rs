@@ -15,7 +15,6 @@ pub struct Input {}
 
 impl Input {
     pub fn click() {
-        log::debug!("鼠标点击");
         get_enigo().button(Button::Left, Direction::Press).unwrap();
         thread::sleep(Duration::from_millis(200));
         get_enigo()

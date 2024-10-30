@@ -1,7 +1,7 @@
 use std::{
     sync::{Arc, Mutex},
     thread,
-    time::Duration,
+    time::{self, Duration},
 };
 
 use crate::{
@@ -10,10 +10,12 @@ use crate::{
     utils::{get_window, transform_crop},
 };
 
+pub type ImageFile = (&'static str, Vec<u8>);
+
 pub struct Plot {
-    select_img: String,
+    select_img: ImageFile,
     game_title_name: String,
-    start_img: Vec<String>,
+    start_img: Vec<ImageFile>,
     is_clicking: bool,
     is_window_active: bool,
     region: Option<(u32, u32, u32, u32)>,
@@ -21,7 +23,11 @@ pub struct Plot {
 }
 
 impl Plot {
-    pub fn new(game_title_name: String, select_img: String, start_img: Vec<String>) -> Self {
+    pub fn new(
+        game_title_name: String,
+        select_img: (&'static str, Vec<u8>),
+        start_img: Vec<(&'static str, Vec<u8>)>,
+    ) -> Self {
         Self {
             auto: Arc::new(Mutex::new(Automation::new(&game_title_name))),
             select_img,
@@ -40,6 +46,7 @@ impl Plot {
     fn check_game_status(self) {
         let arc_self = Arc::new(Mutex::new(self));
         loop {
+            let time = time::Instant::now();
             // 直接取得所有权，防止锁的生命周期过长
             let game_title_name = arc_self.try_lock().unwrap().game_title_name.clone();
             if let Some(window) = get_window(&game_title_name) {
@@ -74,7 +81,8 @@ impl Plot {
                     let mut should_click = false;
 
                     for img in &arc_self.try_lock().unwrap().start_img {
-                        let result = auto.find_element(img, 0.9, false, Some(scale_range), None);
+                        let result =
+                            auto.find_element((img.0, &img.1), 0.9, false, Some(scale_range), None);
                         if result.is_some() {
                             should_click = true;
                             break;
@@ -86,7 +94,7 @@ impl Plot {
 
                         Self::start_clicking(arc_self.clone());
                         auto.click_element(
-                            &select_img,
+                            (select_img.0, &select_img.1),
                             0.9,
                             Some(transform_crop(
                                 (
@@ -101,6 +109,7 @@ impl Plot {
                             Some(scale_range),
                         );
                     }
+                    log::debug!("执行完毕！总耗时：{}ms", time.elapsed().as_millis());
                 } else {
                     let mut lock = arc_self.try_lock().unwrap();
                     if lock.is_window_active {
@@ -147,23 +156,23 @@ impl Plot {
 #[cfg(test)]
 mod tests {
 
-    use simple_logger::SimpleLogger;
+    // use simple_logger::SimpleLogger;
 
-    use super::*;
+    // use super::*;
 
     #[test]
     fn it_works() {
-        SimpleLogger::new()
-            .with_level(log::LevelFilter::Debug)
-            .init()
-            .unwrap();
-        let plot = Plot::new(
-            "崩坏：星穹铁道".to_string(),
-            "select.png".to_string(),
-            vec!["start.png".to_string()],
-        );
+        // SimpleLogger::new()
+        //     .with_level(log::LevelFilter::Debug)
+        //     .init()
+        //     .unwrap();
+        // let plot = Plot::new(
+        //     "崩坏：星穹铁道".to_string(),
+        //     include_bytes!("../assets/select.png").to_vec(),
+        //     vec![include_bytes!("../assets/start.png").to_vec()],
+        // );
 
-        plot.run()
+        // plot.run()
 
         // thread::sleep(Duration::from_secs(10));
     }

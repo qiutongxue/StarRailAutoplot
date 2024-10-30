@@ -1,5 +1,3 @@
-use std::env;
-
 use simple_logger::SimpleLogger;
 use sr_plot_rs::plot::Plot;
 
@@ -10,24 +8,22 @@ fn main() {
         .init()
         .unwrap();
 
-    let image_files = ["start.png", "start_ps5.png", "start_xbox.png"];
+    let image_files = vec![
+        ("start.png", include_bytes!("../assets/start.png").to_vec()),
+        (
+            "start_ps5.png",
+            include_bytes!("../assets/start_ps5.png").to_vec(),
+        ),
+        (
+            "start_xbox.png",
+            include_bytes!("../assets/start_xbox.png").to_vec(),
+        ),
+    ];
 
-    let plot = Plot::new(
-        "崩坏：星穹铁道".to_string(),
-        resource_path("select.png"),
-        load_images(&image_files),
+    let select_image = (
+        "select.png",
+        include_bytes!("../assets/select.png").to_vec(),
     );
+    let plot = Plot::new("崩坏：星穹铁道".to_string(), select_image, image_files);
     plot.run();
-}
-
-fn load_images(image_files: &[&str]) -> Vec<String> {
-    image_files.iter().map(|path| resource_path(path)).collect()
-}
-
-fn resource_path(relative_path: &str) -> String {
-    let path = env::current_dir()
-        .unwrap()
-        .join("assets")
-        .join(relative_path);
-    path.to_str().unwrap().to_string()
 }
