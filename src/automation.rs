@@ -87,7 +87,7 @@ impl Automation {
             let mut encoder = BmpEncoder::new(&mut buffer);
             encoder
                 .encode(
-                    &image,
+                    image,
                     image.width(),
                     image.height(),
                     image::ExtendedColorType::Rgba8,
@@ -97,7 +97,7 @@ impl Automation {
         };
 
         let (match_val, match_loc) =
-            scale_and_match_template(&screenshot, &template, threshold, scale_range);
+            scale_and_match_template(&screenshot, template, threshold, scale_range);
 
         log::debug!("目标图片：{}, 相似度：{:.2}", target_name, match_val);
 
@@ -107,7 +107,7 @@ impl Automation {
                 match_loc.x,
                 match_loc.y
             );
-            let (top_left, bottom_right) = self.calculate_positions(&template, match_loc);
+            let (top_left, bottom_right) = self.calculate_positions(template, match_loc);
             return Some((top_left, bottom_right));
         }
 
