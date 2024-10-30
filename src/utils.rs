@@ -4,7 +4,7 @@ use opencv::{
 };
 use xcap::Window;
 
-use crate::automation::Crop;
+use crate::{automation::Crop, xcap};
 
 pub fn get_window(title: &str) -> Option<Window> {
     Window::all().ok().and_then(|windows| {

@@ -1,12 +1,21 @@
 [package]
 name = "sr_plot_rs"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 
 [dependencies]
 opencv = { version = "0.93", features = ["clang-runtime"] }
 enigo = "0.2"
 image = "0.25"
-xcap = { path = "../xcap" }
 simple_logger = { version = "5", features = ["colors"] }
-log = "*"
+log = "0.4"
+thiserror = "1.0"
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Dwm",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_Storage_Xps",
+    "Win32_System_Threading",
+] }
+sysinfo = "0.32"
