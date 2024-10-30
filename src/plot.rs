@@ -21,6 +21,7 @@ pub struct Plot {
     start_img: Vec<ImageFile>,
     is_clicking: bool,
     is_window_active: bool,
+    is_window_exist: bool,
     region: Option<(u32, u32, u32, u32)>,
     auto: Arc<Mutex<Automation>>,
 }
@@ -38,6 +39,7 @@ impl Plot {
             start_img,
             is_clicking: false,
             is_window_active: false,
+            is_window_exist: false,
             region: None,
         }
     }
@@ -63,6 +65,7 @@ impl Plot {
         // 直接取得所有权，防止锁的生命周期过长
         let game_title_name = arc_self.try_lock()?.game_title_name.clone();
         if let Some(window) = get_window(&game_title_name) {
+            arc_self.try_lock()?.is_window_exist = true;
             if window.is_active() {
                 {
                     let mut lock = arc_self.try_lock()?;
@@ -129,6 +132,13 @@ impl Plot {
                     lock.is_window_active = false;
                     log::warn!("{}", "检测到游戏窗口未激活，停止执行！".blue().bold());
                 }
+            }
+        } else {
+            let mut lock = arc_self.try_lock()?;
+            lock.is_window_active = false;
+            if lock.is_window_exist {
+                lock.is_window_exist = false;
+                log::warn!("{}", "未检测到游戏窗口，等待游戏启动……".cyan().bold());
             }
         }
 
