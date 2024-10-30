@@ -11,7 +11,8 @@ const WELCOME: &str = r#"
 
 fn main() {
     SimpleLogger::new()
-        .with_level(log::LevelFilter::Debug)
+        .with_level(log::LevelFilter::Info)
+        .env()
         .with_module_level("xcap", log::LevelFilter::Off)
         .init()
         .unwrap();
