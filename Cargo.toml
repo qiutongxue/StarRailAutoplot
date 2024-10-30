@@ -20,3 +20,4 @@ windows = { version = "0.58", features = [
 ] }
 sysinfo = "0.32"
 unicode-width = "0.2"
+colored = "2"

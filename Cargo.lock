@@ -1159,6 +1159,7 @@ dependencies = [
 name = "sr_plot_rs"
 version = "0.1.2"
 dependencies = [
+ "colored",
  "enigo",
  "image",
  "log",

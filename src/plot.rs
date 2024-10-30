@@ -11,6 +11,8 @@ use crate::{
     utils::{get_window, transform_crop},
 };
 
+use colored::Colorize;
+
 pub type ImageFile = (&'static str, Vec<u8>);
 
 pub struct Plot {
@@ -45,7 +47,7 @@ impl Plot {
             let arc_self = Arc::new(Mutex::new(self));
             loop {
                 if let Err(e) = Self::check_game_status(arc_self.clone()) {
-                    log::error!("发生错误：\n\t {}", e);
+                    log::error!("{}", format!("发生错误：\n\t {}", e).red().bold());
                     // 需要停止点击
                     arc_self.try_lock().unwrap().stop_clicking();
                 }
@@ -66,7 +68,7 @@ impl Plot {
                     let mut lock = arc_self.try_lock()?;
                     if !lock.is_window_active {
                         lock.is_window_active = true;
-                        log::info!("游戏窗口已激活！正在执行中……");
+                        log::info!("{}", "游戏窗口已激活！正在执行中……".green().bold());
                     }
                 }
                 let (width, height) = (window.width(), window.height());
@@ -125,7 +127,7 @@ impl Plot {
                 let mut lock = arc_self.try_lock()?;
                 if lock.is_window_active {
                     lock.is_window_active = false;
-                    log::warn!("检测到游戏窗口未激活，停止执行！");
+                    log::warn!("{}", "检测到游戏窗口未激活，停止执行！".blue().bold());
                 }
             }
         }
@@ -157,7 +159,7 @@ impl Plot {
             if x <= mouse_x && mouse_x <= x + w && y <= mouse_y && mouse_y <= y + h {
                 Input::click()?;
             } else {
-                log::warn!("鼠标不在窗口内！");
+                log::warn!("{}", "鼠标不在窗口内！".bold());
             }
             log::debug!("点击后等待 100ms");
             thread::sleep(Duration::from_millis(100));
