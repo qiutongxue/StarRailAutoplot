@@ -6,6 +6,7 @@ use std::{
 
 use crate::{
     automation::Automation,
+    error::{SrPlotError, SrPlotResult},
     input::Input,
     utils::{get_window, transform_crop},
 };
@@ -40,140 +41,127 @@ impl Plot {
     }
 
     pub fn run(self) {
-        thread::spawn(|| self.check_game_status()).join().unwrap();
+        thread::spawn(|| {
+            let arc_self = Arc::new(Mutex::new(self));
+            loop {
+                if let Err(e) = Self::check_game_status(arc_self.clone()) {
+                    log::error!("发生错误：\n\t {}", e);
+                    // 需要停止点击
+                    arc_self.try_lock().unwrap().stop_clicking();
+                }
+                thread::sleep(Duration::from_millis(500));
+            }
+        })
+        .join()
+        .unwrap();
     }
 
-    fn check_game_status(self) {
-        let arc_self = Arc::new(Mutex::new(self));
-        loop {
-            let time = time::Instant::now();
-            // 直接取得所有权，防止锁的生命周期过长
-            let game_title_name = arc_self.try_lock().unwrap().game_title_name.clone();
-            if let Some(window) = get_window(&game_title_name) {
-                if window.is_active() {
-                    {
-                        let mut lock = arc_self.try_lock().unwrap();
-                        if !lock.is_window_active {
-                            lock.is_window_active = true;
-                            log::info!("游戏窗口已激活！正在执行中……");
-                        }
-                    }
-                    let (width, height) = (window.width(), window.height());
-                    let (x, y) = (window.x() as u32, window.y() as u32);
-
-                    // 记录窗口位置，点击的时候要用
-                    arc_self.try_lock().unwrap().region = Some((x, y, width, height));
-
-                    let auto = arc_self.try_lock().unwrap().auto.clone();
-                    let mut auto = auto.lock().unwrap();
-                    auto.take_screenshot(Some(transform_crop(
-                        (122.0 / 1920.0, 31.0 / 1080.0, 98.0 / 1920.0, 58.0 / 1080.0),
-                        width,
-                        height,
-                    )));
-
-                    // 缩放大小，匹配窗口分辨率
-                    let scale = width as f64 / 1920.0;
-                    let scale_range = (
-                        ((scale - 0.05) * 10.0).round() / 10.0,
-                        ((scale + 0.05) * 10.0).round() / 10.0,
-                    );
-                    let mut should_click = false;
-
-                    for img in &arc_self.try_lock().unwrap().start_img {
-                        let result =
-                            auto.find_element((img.0, &img.1), 0.9, false, Some(scale_range), None);
-                        if result.is_some() {
-                            should_click = true;
-                            break;
-                        }
-                    }
-
-                    if should_click {
-                        let select_img = arc_self.try_lock().unwrap().select_img.clone();
-
-                        Self::start_clicking(arc_self.clone());
-                        auto.click_element(
-                            (select_img.0, &select_img.1),
-                            0.9,
-                            Some(transform_crop(
-                                (
-                                    1290.0 / 1920.0,
-                                    442.0 / 1080.0,
-                                    74.0 / 1920.0,
-                                    400.0 / 1080.0,
-                                ),
-                                width,
-                                height,
-                            )),
-                            Some(scale_range),
-                        );
-                    }
-                    log::debug!("执行完毕！总耗时：{}ms", time.elapsed().as_millis());
-                } else {
-                    let mut lock = arc_self.try_lock().unwrap();
-                    if lock.is_window_active {
-                        lock.is_window_active = false;
-                        log::warn!("检测到游戏窗口未激活，停止执行！");
+    fn check_game_status(arc_self: Arc<Mutex<Self>>) -> SrPlotResult<()> {
+        let time = time::Instant::now();
+        // 直接取得所有权，防止锁的生命周期过长
+        let game_title_name = arc_self.try_lock()?.game_title_name.clone();
+        if let Some(window) = get_window(&game_title_name) {
+            if window.is_active() {
+                {
+                    let mut lock = arc_self.try_lock()?;
+                    if !lock.is_window_active {
+                        lock.is_window_active = true;
+                        log::info!("游戏窗口已激活！正在执行中……");
                     }
                 }
-            }
+                let (width, height) = (window.width(), window.height());
+                let (x, y) = (window.x() as u32, window.y() as u32);
 
-            arc_self.try_lock().unwrap().stop_clicking();
-            thread::sleep(Duration::from_millis(500));
+                // 记录窗口位置，点击的时候要用
+                arc_self.try_lock()?.region = Some((x, y, width, height));
+
+                let auto = arc_self.try_lock()?.auto.clone();
+                let mut auto = auto.try_lock()?;
+                auto.take_screenshot(Some(transform_crop(
+                    (122.0 / 1920.0, 31.0 / 1080.0, 98.0 / 1920.0, 58.0 / 1080.0),
+                    width,
+                    height,
+                )));
+
+                // 缩放大小，匹配窗口分辨率
+                let scale = width as f64 / 1920.0;
+                let scale_range = (
+                    ((scale - 0.05) * 10.0).round() / 10.0,
+                    ((scale + 0.05) * 10.0).round() / 10.0,
+                );
+                let mut should_click = false;
+
+                for img in &arc_self.try_lock()?.start_img {
+                    let result =
+                        auto.find_element((img.0, &img.1), 0.9, false, Some(scale_range), None)?;
+                    if result.is_some() {
+                        should_click = true;
+                        break;
+                    }
+                }
+
+                if should_click {
+                    let select_img = arc_self.try_lock()?.select_img.clone();
+
+                    Self::start_clicking(arc_self.clone())?;
+                    let _ = auto.click_element(
+                        (select_img.0, &select_img.1),
+                        0.9,
+                        Some(transform_crop(
+                            (
+                                1290.0 / 1920.0,
+                                442.0 / 1080.0,
+                                74.0 / 1920.0,
+                                400.0 / 1080.0,
+                            ),
+                            width,
+                            height,
+                        )),
+                        Some(scale_range),
+                    );
+                }
+                log::debug!("执行完毕！总耗时：{}ms", time.elapsed().as_millis());
+            } else {
+                let mut lock = arc_self.try_lock()?;
+                if lock.is_window_active {
+                    lock.is_window_active = false;
+                    log::warn!("检测到游戏窗口未激活，停止执行！");
+                }
+            }
         }
+
+        arc_self.try_lock()?.stop_clicking();
+        Ok(())
     }
 
-    fn start_clicking(arc_self: Arc<Mutex<Self>>) {
-        arc_self.try_lock().unwrap().is_clicking = true;
+    fn start_clicking(arc_self: Arc<Mutex<Self>>) -> SrPlotResult<()> {
+        arc_self.try_lock()?.is_clicking = true;
         let arc_self = arc_self.clone();
         thread::spawn(|| Self::click(arc_self));
+        Ok(())
     }
 
     fn stop_clicking(&mut self) {
         self.is_clicking = false;
     }
 
-    fn click(arc_self: Arc<Mutex<Self>>) {
+    fn click(arc_self: Arc<Mutex<Self>>) -> SrPlotResult<()> {
         loop {
-            if !arc_self.try_lock().unwrap().is_clicking {
+            if !arc_self.try_lock()?.is_clicking {
                 break;
             }
             let (mouse_x, mouse_y) = Input::position();
             log::debug!("鼠标位置：({}, {})", mouse_x, mouse_y);
-            let (x, y, w, h) = arc_self.try_lock().unwrap().region.unwrap();
+            let (x, y, w, h) = arc_self.try_lock()?.region.ok_or(SrPlotError::Unexcepted)?;
             log::debug!("窗口位置：({}, {}, {}, {})", x, y, w, h);
             if x <= mouse_x && mouse_x <= x + w && y <= mouse_y && mouse_y <= y + h {
-                Input::click();
+                Input::click()?;
             } else {
                 log::warn!("鼠标不在窗口内！");
             }
+            log::debug!("点击后等待 100ms");
             thread::sleep(Duration::from_millis(100));
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-
-    // use simple_logger::SimpleLogger;
-
-    // use super::*;
-
-    #[test]
-    fn it_works() {
-        // SimpleLogger::new()
-        //     .with_level(log::LevelFilter::Debug)
-        //     .init()
-        //     .unwrap();
-        // let plot = Plot::new(
-        //     "崩坏：星穹铁道".to_string(),
-        //     include_bytes!("../assets/select.png").to_vec(),
-        //     vec![include_bytes!("../assets/start.png").to_vec()],
-        // );
-
-        // plot.run()
-
-        // thread::sleep(Duration::from_secs(10));
+        Ok(())
     }
 }

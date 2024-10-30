@@ -1,22 +1,27 @@
-use core::panic;
-
 use image::{DynamicImage, RgbaImage};
 
-use crate::{automation::Crop, utils::get_window};
+use crate::{
+    automation::Crop,
+    error::{SrPlotError, SrPlotResult},
+    utils::get_window,
+};
 
 pub fn take_screenshot(
     title: &str,
     crop: Option<(u32, u32, u32, u32)>,
-) -> Result<(RgbaImage, Crop, f64), Box<dyn std::error::Error>> {
+) -> SrPlotResult<(RgbaImage, Crop, f64)> {
     if let Some(window) = get_window(title) {
-        let mut screenshot = window.capture_image()?;
+        let mut screenshot = window
+            .capture_image()
+            .map_err(|e| SrPlotError::Screenshot(e.to_string()))?;
+
         let (real_width, real_height) = (window.width(), window.height());
         let mut screenshot_factor = 1.0;
         if real_width > 1920 {
             screenshot_factor = 1920.0 / real_width as f64;
             let (_, _, w, h) = crop.unwrap_or((0, 0, real_width, real_height));
             screenshot = DynamicImage::ImageRgba8(screenshot)
-                .resize(w, h, image::imageops::FilterType::CatmullRom)
+                .resize(w, h, image::imageops::FilterType::Nearest)
                 .to_rgba8();
         }
 
@@ -38,7 +43,7 @@ pub fn take_screenshot(
             Ok((screenshot, region, screenshot_factor))
         }
     } else {
-        panic!("Window not found: {}", title);
+        Err(SrPlotError::Screenshot(format!("窗口「{}」不存在", title)))
     }
 }
 

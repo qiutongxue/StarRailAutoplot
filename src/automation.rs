@@ -6,12 +6,18 @@ use std::{
 
 use image::{codecs::bmp::BmpEncoder, RgbaImage};
 use opencv::core::{Mat, MatTraitConst, Size};
+
 use opencv::{
     core::Point,
     imgcodecs::{imdecode, ImreadModes},
 };
 
-use crate::{input::Input, screenshot, utils::scale_and_match_template};
+use crate::{
+    error::{SrPlotError, SrPlotResult},
+    input::Input,
+    screenshot,
+    utils::scale_and_match_template,
+};
 
 pub struct Automation {
     screenshot: Option<RgbaImage>,
@@ -22,6 +28,7 @@ pub struct Automation {
 }
 
 pub type ScaleRange = (f64, f64);
+type Coordinate = ((u32, u32), (u32, u32));
 pub type Crop = (u32, u32, u32, u32);
 
 impl Automation {
@@ -67,33 +74,31 @@ impl Automation {
         take_screenshot: bool,
         scale_range: Option<ScaleRange>,
         crop: Option<Crop>,
-    ) -> Option<((u32, u32), (u32, u32))> {
+    ) -> SrPlotResult<Option<Coordinate>> {
         if take_screenshot {
             self.take_screenshot(crop);
         }
         log::debug!("scale_range: {:?}", scale_range);
         let (target_name, target) = target;
         if !self.cache.contains_key(target_name) {
-            let template = imdecode(&target, ImreadModes::IMREAD_COLOR as i32).unwrap();
+            let template = imdecode(&target, ImreadModes::IMREAD_COLOR as i32)?;
             self.cache.insert(target_name.to_string(), template);
         }
 
-        let template = self.cache.get(target_name).unwrap();
+        let template = self.cache.get(target_name).ok_or(SrPlotError::Unexcepted)?;
 
         let screenshot = {
-            let image = self.screenshot.as_ref().unwrap();
+            let image = self.screenshot.as_ref().ok_or(SrPlotError::Unexcepted)?;
             let mut buffer =
                 Vec::with_capacity(image.width() as usize * image.height() as usize + 1000);
             let mut encoder = BmpEncoder::new(&mut buffer);
-            encoder
-                .encode(
-                    image,
-                    image.width(),
-                    image.height(),
-                    image::ExtendedColorType::Rgba8,
-                )
-                .unwrap();
-            imdecode(&buffer.as_slice(), ImreadModes::IMREAD_COLOR as i32).unwrap()
+            encoder.encode(
+                image,
+                image.width(),
+                image.height(),
+                image::ExtendedColorType::Rgba8,
+            )?;
+            imdecode(&buffer.as_slice(), ImreadModes::IMREAD_COLOR as i32)?
         };
 
         let (match_val, match_loc) =
@@ -107,11 +112,11 @@ impl Automation {
                 match_loc.x,
                 match_loc.y
             );
-            let (top_left, bottom_right) = self.calculate_positions(template, match_loc);
-            return Some((top_left, bottom_right));
+            let (top_left, bottom_right) = self.calculate_positions(template, match_loc)?;
+            Ok(Some((top_left, bottom_right)))
+        } else {
+            Ok(None)
         }
-
-        None
     }
 
     pub fn click_element(
@@ -120,36 +125,39 @@ impl Automation {
         threshold: f64,
         crop: Option<Crop>,
         scale_range: Option<ScaleRange>,
-    ) {
-        let coordinates = self.find_element(target, threshold, true, scale_range, crop);
+    ) -> SrPlotResult<()> {
+        let coordinates = self.find_element(target, threshold, true, scale_range, crop)?;
         if let Some(coordinates) = coordinates {
             log::debug!("coordinates: {:?}", coordinates);
-            self.click_element_with_pos(coordinates);
+            self.click_element_with_pos(coordinates)?;
         }
+        Ok(())
     }
 
-    fn click_element_with_pos(&self, coordinates: ((u32, u32), (u32, u32))) {
+    fn click_element_with_pos(&self, coordinates: Coordinate) -> SrPlotResult<()> {
         let ((left, top), (right, bottom)) = coordinates;
         let x = (left + right) / 2;
         let y = (top + bottom) / 2;
 
-        Input::move_and_click(x, y);
+        Input::move_and_click(x, y)?;
+        Ok(())
     }
 
-    fn calculate_positions(&self, template: &Mat, max_loc: Point) -> ((u32, u32), (u32, u32)) {
-        let Size { width, height } = template.size().unwrap();
+    fn calculate_positions(&self, template: &Mat, max_loc: Point) -> SrPlotResult<Coordinate> {
+        let Size { width, height } = template.size()?;
 
         let scale_factor = self.screenshot_factor;
+        let (sspos_x, sspos_y, _, _) = self.screenshot_pos.ok_or(SrPlotError::Unexcepted)?;
         let top_left = (
-            (max_loc.x as f64 / scale_factor) as u32 + self.screenshot_pos.unwrap().0,
-            (max_loc.y as f64 / scale_factor) as u32 + self.screenshot_pos.unwrap().1,
+            (max_loc.x as f64 / scale_factor) as u32 + sspos_x,
+            (max_loc.y as f64 / scale_factor) as u32 + sspos_y,
         );
         let bottom_right = (
             top_left.0 + (width as f64 / scale_factor) as u32,
             top_left.1 + (height as f64 / scale_factor) as u32,
         );
 
-        (top_left, bottom_right)
+        Ok((top_left, bottom_right))
     }
 }
 
