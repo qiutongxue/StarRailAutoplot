@@ -75,7 +75,7 @@ impl Plot {
                 for img in &self.start_img {
                     let result = self.auto.find_element((img.0, &img.1), 0.9, scale_range)?;
                     if result.is_some() {
-                        let select_img = self.select_img.clone();
+                        let select_img = &self.select_img;
                         // 查找是否有选项要点
                         self.auto.take_screenshot(SELECT_IMAGE_CROP.into())?;
                         match self.auto.find_element(
