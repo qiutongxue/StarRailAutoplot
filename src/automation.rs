@@ -102,7 +102,7 @@ impl Automation {
         };
 
         let (match_val, match_loc) =
-            scale_and_match_template(&screenshot, template, threshold, scale_range);
+            scale_and_match_template(&screenshot, template, threshold, scale_range)?;
 
         log::debug!("目标图片：{}, 相似度：{:.2}", target_name, match_val);
 
