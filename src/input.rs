@@ -30,9 +30,8 @@ impl Input {
             .map_or((0, 0), |loc| (loc.0 as u32, loc.1 as u32))
     }
 
-    pub fn move_and_click(x: u32, y: u32) -> SrPlotResult<()> {
+    pub fn move_mouse(x: u32, y: u32) -> SrPlotResult<()> {
         get_enigo().move_mouse(x as i32, y as i32, enigo::Coordinate::Abs)?;
-        Input::click()?;
         Ok(())
     }
 }

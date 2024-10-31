@@ -1,6 +1,6 @@
 use simple_logger::SimpleLogger;
 use sr_plot_rs::plot::Plot;
-use std::fmt::Write;
+use std::{fmt::Write, thread};
 use unicode_width::UnicodeWidthStr;
 
 const WELCOME: &str = r#"
@@ -32,7 +32,12 @@ fn main() {
         "select.png",
         include_bytes!("../assets/select.png").to_vec(),
     );
-    Plot::new("崩坏：星穹铁道".to_string(), select_image, image_files).run();
+
+    thread::spawn(|| {
+        Plot::new("崩坏：星穹铁道".to_string(), select_image, image_files).run();
+    })
+    .join()
+    .unwrap();
 }
 
 #[cfg(not(debug_assertions))]

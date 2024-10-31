@@ -1,23 +1,17 @@
 use std::{
-    sync::{Arc, Mutex},
     thread,
     time::{Duration, Instant},
 };
 
-use crate::{
-    automation::{Automation, Crop},
-    error::{SrPlotError, SrPlotResult},
-    input::Input,
-    utils::get_window,
-};
+use crate::{automation::Automation, error::SrPlotResult, utils::get_window};
 
 use colored::Colorize;
 
 pub type ImageFile = (&'static str, Vec<u8>);
+pub type CropRatio = (f32, f32, f32, f32);
 
-const START_IMAGE_CROP: (f32, f32, f32, f32) =
-    (122.0 / 1920.0, 31.0 / 1080.0, 98.0 / 1920.0, 58.0 / 1080.0);
-const SELECT_IMAGE_CROP: (f32, f32, f32, f32) = (
+const START_IMAGE_CROP: CropRatio = (122.0 / 1920.0, 31.0 / 1080.0, 98.0 / 1920.0, 58.0 / 1080.0);
+const SELECT_IMAGE_CROP: CropRatio = (
     1290.0 / 1920.0,
     442.0 / 1080.0,
     74.0 / 1920.0,
@@ -28,11 +22,9 @@ pub struct Plot {
     select_img: ImageFile,
     game_title_name: String,
     start_img: Vec<ImageFile>,
-    is_clicking: bool,
     is_window_active: bool,
     is_window_exist: bool,
-    region: Option<(u32, u32, u32, u32)>,
-    auto: Arc<Mutex<Automation>>,
+    auto: Automation,
 }
 
 impl Plot {
@@ -42,148 +34,82 @@ impl Plot {
         start_img: Vec<(&'static str, Vec<u8>)>,
     ) -> Self {
         Self {
-            auto: Arc::new(Mutex::new(Automation::new(&game_title_name))),
+            auto: Automation::new(&game_title_name),
             select_img,
             game_title_name,
             start_img,
-            is_clicking: false,
             is_window_active: false,
             is_window_exist: false,
-            region: None,
         }
     }
 
-    pub fn run(self) {
-        thread::spawn(|| {
-            let arc_self = Arc::new(Mutex::new(self));
-            loop {
-                if let Err(e) = Self::check_game_status(arc_self.clone()) {
-                    log::error!("{}", format!("发生错误：\n\t {}", e).red().bold());
-                    // 需要停止点击
-                    arc_self.try_lock().unwrap().stop_clicking();
-                }
-                thread::sleep(Duration::from_millis(500));
+    pub fn run(&mut self) {
+        loop {
+            if let Err(e) = self.check_game_status() {
+                log::error!("{}", format!("{}", e).red().bold());
             }
-        })
-        .join()
-        .unwrap();
+            thread::sleep(Duration::from_millis(500));
+        }
     }
 
-    fn check_game_status(arc_self: Arc<Mutex<Self>>) -> SrPlotResult<()> {
+    fn check_game_status(&mut self) -> SrPlotResult<()> {
         let time = Instant::now();
-        // 直接取得所有权，防止锁的生命周期过长
-        let game_title_name = arc_self.try_lock()?.game_title_name.clone();
-        if let Some(window) = get_window(&game_title_name) {
-            arc_self.try_lock()?.is_window_exist = true;
+        if let Some(window) = get_window(&self.game_title_name) {
+            self.is_window_exist = true;
             if window.is_active() {
-                let mut lock = arc_self.try_lock()?;
-                handle_status_change(&mut lock.is_window_active, true, || {
+                handle_status_change(&mut self.is_window_active, true, || {
                     log::info!("{}", "游戏窗口已激活！正在执行中……".green().bold())
                 });
 
-                let (width, height) = (window.width(), window.height());
-                let (x, y) = (window.x() as u32, window.y() as u32);
-
-                // 记录窗口位置，点击的时候要用
-                lock.region = Some((x, y, width, height));
-
-                let auto = lock.auto.clone();
-
-                drop(lock);
-                let mut auto = auto.try_lock()?;
-                auto.take_screenshot(Some(transform_crop(START_IMAGE_CROP, width, height)))?;
+                self.auto.take_screenshot(START_IMAGE_CROP.into())?;
 
                 // 缩放大小，匹配窗口分辨率
-                let scale = width as f64 / 1920.0;
-                let scale_range = (
-                    ((scale - 0.05) * 10.0).round() / 10.0,
-                    ((scale + 0.05) * 10.0).round() / 10.0,
-                );
-                let mut should_click = false;
+                let scale_factor = window.width() as f64 / 1920.0;
+                let scale_range = (scale_factor < 1.0).then(|| {
+                    (
+                        ((scale_factor - 0.05) * 10.0).round() / 10.0,
+                        ((scale_factor + 0.05) * 10.0).round() / 10.0,
+                    )
+                });
 
-                for img in &arc_self.try_lock()?.start_img {
-                    let result = auto.find_element((img.0, &img.1), 0.9, scale_range)?;
+                for img in &self.start_img {
+                    let result = self.auto.find_element((img.0, &img.1), 0.9, scale_range)?;
                     if result.is_some() {
-                        should_click = true;
+                        let select_img = self.select_img.clone();
+                        // 查找是否有选项要点
+                        self.auto.take_screenshot(SELECT_IMAGE_CROP.into())?;
+                        match self.auto.find_element(
+                            (select_img.0, &select_img.1),
+                            0.88, // 遇到过 0.89 匹配不上，所以降低 threshold
+                            scale_range,
+                        )? {
+                            // 有选项就点击选项
+                            Some(coordinate) => self.auto.click_with_coordinate(coordinate)?,
+                            // 没选项就随便点
+                            None => self.auto.click()?,
+                        }
                         break;
                     }
                 }
-
-                if should_click {
-                    let select_img = arc_self.try_lock()?.select_img.clone();
-
-                    Self::start_clicking(arc_self.clone())?;
-
-                    // 点击选项
-                    let _ = auto.click_element(
-                        (select_img.0, &select_img.1),
-                        0.85,
-                        scale_range,
-                        transform_crop(SELECT_IMAGE_CROP, width, height),
-                    );
-                }
                 log::debug!("执行完毕！总耗时：{}ms", time.elapsed().as_millis());
             } else {
-                handle_status_change(&mut arc_self.try_lock()?.is_window_active, false, || {
+                handle_status_change(&mut self.is_window_active, false, || {
                     log::warn!("{}", "检测到游戏窗口未激活，停止执行！".blue().bold())
                 });
             }
         } else {
-            let mut lock = arc_self.try_lock()?;
-            lock.is_window_active = false;
-            handle_status_change(&mut lock.is_window_exist, false, || {
+            self.is_window_active = false;
+            handle_status_change(&mut self.is_window_exist, false, || {
                 log::warn!("{}", "未检测到游戏窗口，等待游戏启动……".cyan().bold())
             });
-        }
-
-        arc_self.try_lock()?.stop_clicking();
-        Ok(())
-    }
-
-    fn start_clicking(arc_self: Arc<Mutex<Self>>) -> SrPlotResult<()> {
-        arc_self.try_lock()?.is_clicking = true;
-        let arc_self = arc_self.clone();
-        thread::spawn(|| Self::click(arc_self));
-        Ok(())
-    }
-
-    fn stop_clicking(&mut self) {
-        self.is_clicking = false;
-    }
-
-    fn click(arc_self: Arc<Mutex<Self>>) -> SrPlotResult<()> {
-        loop {
-            if !arc_self.try_lock()?.is_clicking {
-                break;
-            }
-            let (mouse_x, mouse_y) = Input::position();
-            log::debug!("鼠标位置：({}, {})", mouse_x, mouse_y);
-            let (x, y, w, h) = arc_self.try_lock()?.region.ok_or(SrPlotError::Unexcepted)?;
-            log::debug!("窗口位置：({}, {}, {}, {})", x, y, w, h);
-            if x <= mouse_x && mouse_x <= x + w && y <= mouse_y && mouse_y <= y + h {
-                Input::click()?;
-            } else {
-                log::warn!("{}", "鼠标不在窗口内！".bold());
-            }
-            log::debug!("点击后等待 100ms");
-            thread::sleep(Duration::from_millis(100));
         }
         Ok(())
     }
 }
 
-fn handle_status_change(status: &mut bool, target: bool, event: impl FnOnce() -> ()) {
+fn handle_status_change<T: Eq>(status: &mut T, target: T, event: impl FnOnce()) {
     if *status != target {
         *status = target;
         event();
     }
-}
-
-pub fn transform_crop(crop: (f32, f32, f32, f32), w: u32, h: u32) -> Crop {
-    (
-        (crop.0 * w as f32) as u32,
-        (crop.1 * h as f32) as u32,
-        (crop.2 * w as f32) as u32,
-        (crop.3 * h as f32) as u32,
-    )
 }

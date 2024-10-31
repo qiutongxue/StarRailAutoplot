@@ -10,23 +10,43 @@ use opencv::{
     imgcodecs::{imdecode, ImreadModes},
 };
 
+use crate::plot::CropRatio;
 use crate::{
     error::{SrPlotError, SrPlotResult},
     input::Input,
     screenshot,
 };
 
-pub struct Automation {
-    screenshot: Option<RgbaImage>,
-    screenshot_pos: Option<(u32, u32, u32, u32)>,
-    screenshot_factor: f64,
-    window_title: String,
-    cache: HashMap<String, Mat>,
+pub type ScaleRange = (f64, f64);
+pub type Coordinate = ((u32, u32), (u32, u32));
+
+#[derive(Debug, Clone, Copy)]
+pub struct Region {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
 }
 
-pub type ScaleRange = (f64, f64);
-type Coordinate = ((u32, u32), (u32, u32));
-pub type Crop = (u32, u32, u32, u32);
+impl Region {
+    pub fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+}
+
+pub struct Automation {
+    screenshot: Option<RgbaImage>,
+    screenshot_pos: Option<Region>,
+    screenshot_factor: f64,
+    window_title: String,
+    window_region: Option<Region>,
+    cache: HashMap<String, Mat>,
+}
 
 impl Automation {
     pub fn new(window_title: &str) -> Self {
@@ -34,18 +54,20 @@ impl Automation {
             screenshot: None,
             screenshot_pos: None,
             screenshot_factor: 1.0,
+            window_region: None,
             cache: HashMap::new(),
             window_title: window_title.to_owned(),
         }
     }
 
-    pub fn take_screenshot(&mut self, crop: Option<Crop>) -> SrPlotResult<()> {
+    pub fn take_screenshot(&mut self, crop: Option<CropRatio>) -> SrPlotResult<()> {
         let timer = Instant::now();
 
-        let (screenshot, screenshot_pos, screenshot_factor) =
+        let (screenshot, screenshot_pos, screenshot_factor, window_region) =
             screenshot::take_screenshot(&self.window_title, crop)?;
         self.screenshot = Some(screenshot);
         self.screenshot_pos = Some(screenshot_pos);
+        self.window_region = Some(window_region);
         self.screenshot_factor = screenshot_factor;
         log::debug!(
             "截图成功，耗时：{}ms, 截图区域：{:?}，缩放比例：{:.2}",
@@ -60,7 +82,7 @@ impl Automation {
         &mut self,
         target: (&'static str, &[u8]),
         threshold: f64,
-        scale_range: ScaleRange,
+        scale_range: Option<ScaleRange>,
     ) -> SrPlotResult<Option<Coordinate>> {
         log::debug!("scale_range: {:?}", scale_range);
         let (target_name, target) = target;
@@ -86,7 +108,7 @@ impl Automation {
         };
 
         let (match_val, match_loc) =
-            scale_and_match_template(&screenshot, template, threshold, scale_range.into())?;
+            scale_and_match_template(&screenshot, template, threshold, scale_range)?;
 
         log::debug!("目标图片：{}, 相似度：{:.2}", target_name, match_val);
 
@@ -103,37 +125,15 @@ impl Automation {
         }
     }
 
-    pub fn click_element(
-        &mut self,
-        target: (&'static str, &[u8]),
-        threshold: f64,
-        scale_range: ScaleRange,
-        crop: Crop,
-    ) -> SrPlotResult<Option<()>> {
-        self.take_screenshot(crop.into())?;
-        let coordinates = self.find_element(target, threshold, scale_range)?;
-        if let Some(coordinates) = coordinates {
-            log::debug!("coordinates: {:?}", coordinates);
-            self.click_element_with_pos(coordinates)?;
-            return Ok(Some(()));
-        }
-        Ok(None)
-    }
-
-    fn click_element_with_pos(&self, coordinates: Coordinate) -> SrPlotResult<()> {
-        let ((left, top), (right, bottom)) = coordinates;
-        let x = (left + right) / 2;
-        let y = (top + bottom) / 2;
-
-        Input::move_and_click(x, y)?;
-        Ok(())
-    }
-
     fn calculate_positions(&self, template: &Mat, max_loc: Point) -> SrPlotResult<Coordinate> {
         let Size { width, height } = template.size()?;
 
         let scale_factor = self.screenshot_factor;
-        let (sspos_x, sspos_y, _, _) = self.screenshot_pos.ok_or(SrPlotError::Unexcepted)?;
+        let Region {
+            x: sspos_x,
+            y: sspos_y,
+            ..
+        } = self.screenshot_pos.ok_or(SrPlotError::Unexcepted)?;
         let top_left = (
             (max_loc.x as f64 / scale_factor) as u32 + sspos_x,
             (max_loc.y as f64 / scale_factor) as u32 + sspos_y,
@@ -144,6 +144,32 @@ impl Automation {
         );
 
         Ok((top_left, bottom_right))
+    }
+
+    pub fn click(&self) -> SrPlotResult<()> {
+        let (mouse_x, mouse_y) = Input::position();
+        log::debug!("鼠标位置：({}, {})", mouse_x, mouse_y);
+        let Region {
+            x,
+            y,
+            width,
+            height,
+        } = self.window_region.ok_or(SrPlotError::Unexcepted)?;
+        log::debug!("窗口位置：({}, {}, {}, {})", x, y, width, height);
+        if x <= mouse_x && mouse_x <= x + width && y <= mouse_y && mouse_y <= y + height {
+            Input::click()
+        } else {
+            Err(SrPlotError::User("鼠标不在游戏窗口内！".to_string()))
+        }
+    }
+
+    pub fn click_with_coordinate(&self, coordinate: Coordinate) -> SrPlotResult<()> {
+        let ((left, top), (right, bottom)) = coordinate;
+        let x = (left + right) / 2;
+        let y = (top + bottom) / 2;
+
+        Input::move_mouse(x, y)?;
+        self.click()
     }
 }
 
