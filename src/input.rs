@@ -18,7 +18,8 @@ pub struct Input;
 impl Input {
     pub fn click() -> SrPlotResult<()> {
         get_enigo().button(Button::Left, Direction::Press)?;
-        thread::sleep(Duration::from_millis(200));
+        // 经测试，正常的间隔大概在 75~100ms 左右
+        thread::sleep(Duration::from_millis(50));
         get_enigo().button(Button::Left, Direction::Release)?;
         Ok(())
     }
