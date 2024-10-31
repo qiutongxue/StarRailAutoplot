@@ -12,12 +12,7 @@ const WELCOME: &str = r#"
 "#;
 
 fn main() {
-    SimpleLogger::new()
-        .with_level(log::LevelFilter::Info)
-        .env()
-        .with_module_level("xcap", log::LevelFilter::Off)
-        .init()
-        .unwrap();
+    setup();
 
     println!("{}", hr(WELCOME));
 
@@ -37,8 +32,24 @@ fn main() {
         "select.png",
         include_bytes!("../assets/select.png").to_vec(),
     );
-    let plot = Plot::new("崩坏：星穹铁道".to_string(), select_image, image_files);
-    plot.run();
+    Plot::new("崩坏：星穹铁道".to_string(), select_image, image_files).run();
+}
+
+#[cfg(not(debug_assertions))]
+fn setup() {
+    SimpleLogger::new()
+        .with_level(log::LevelFilter::Info)
+        .init()
+        .unwrap();
+}
+
+#[cfg(debug_assertions)]
+fn setup() {
+    SimpleLogger::new()
+        .with_level(log::LevelFilter::Debug)
+        .env()
+        .init()
+        .unwrap();
 }
 
 fn hr(title: &str) -> String {
