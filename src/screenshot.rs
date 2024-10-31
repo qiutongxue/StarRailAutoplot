@@ -46,24 +46,3 @@ pub fn take_screenshot(
         Err(SrPlotError::Screenshot(format!("窗口「{}」不存在", title)))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::utils::transform_crop;
-
-    use super::take_screenshot;
-
-    #[test]
-    fn test() {
-        let img = take_screenshot(
-            "崩坏：星穹铁道",
-            Some(transform_crop(
-                (122.0 / 1920.0, 31.0 / 1080.0, 98.0 / 1920.0, 58.0 / 1080.0),
-                1600,
-                900,
-            )),
-        )
-        .unwrap();
-        img.0.save("test.bmp").unwrap();
-    }
-}
