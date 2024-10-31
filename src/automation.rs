@@ -2,8 +2,9 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use image::{codecs::bmp::BmpEncoder, RgbaImage};
-use opencv::core::{Mat, MatTraitConst, Size};
+use opencv::core::{min_max_loc, no_array, Mat, MatTraitConst, Size};
 
+use opencv::imgproc::{match_template_def, resize, InterpolationFlags, TemplateMatchModes};
 use opencv::{
     core::Point,
     imgcodecs::{imdecode, ImreadModes},
@@ -13,7 +14,6 @@ use crate::{
     error::{SrPlotError, SrPlotResult},
     input::Input,
     screenshot,
-    utils::scale_and_match_template,
 };
 
 pub struct Automation {
@@ -109,14 +109,15 @@ impl Automation {
         threshold: f64,
         scale_range: ScaleRange,
         crop: Crop,
-    ) -> SrPlotResult<()> {
+    ) -> SrPlotResult<Option<()>> {
         self.take_screenshot(crop.into())?;
         let coordinates = self.find_element(target, threshold, scale_range)?;
         if let Some(coordinates) = coordinates {
             log::debug!("coordinates: {:?}", coordinates);
             self.click_element_with_pos(coordinates)?;
+            return Ok(Some(()));
         }
-        Ok(())
+        Ok(None)
     }
 
     fn click_element_with_pos(&self, coordinates: Coordinate) -> SrPlotResult<()> {
@@ -144,4 +145,73 @@ impl Automation {
 
         Ok((top_left, bottom_right))
     }
+}
+
+pub fn scale_and_match_template(
+    screenshot: &Mat,
+    template: &Mat,
+    threshold: f64,
+    scale_range: Option<(f64, f64)>,
+) -> SrPlotResult<(f64, Point)> {
+    let mut result = Mat::default();
+    log::debug!(
+        "screenshot size: {:?}, template size: {:?}",
+        screenshot.size(),
+        template.size()
+    );
+    match_template_def(
+        screenshot,
+        template,
+        &mut result,
+        TemplateMatchModes::TM_CCOEFF_NORMED as i32,
+    )?;
+    let mut max_val = 0f64;
+    let mut max_loc = Point::default();
+    min_max_loc(
+        &result,
+        None,
+        Some(&mut max_val),
+        None,
+        Some(&mut max_loc),
+        &no_array(),
+    )?;
+    if scale_range.is_some() && (max_val.is_infinite() || max_val < threshold) {
+        let (scale_start, scale_end) = scale_range.unwrap();
+        let mut scale = scale_start;
+        while scale < scale_end + 0.0001 {
+            let mut scaled_template = Mat::default();
+            resize(
+                template,
+                &mut scaled_template,
+                Size::default(),
+                scale,
+                scale,
+                InterpolationFlags::INTER_AREA as i32,
+            )?;
+            let mut result = Mat::default();
+            match_template_def(
+                &screenshot,
+                &scaled_template,
+                &mut result,
+                TemplateMatchModes::TM_CCOEFF_NORMED as i32,
+            )?;
+
+            let mut local_max_val = 0f64;
+            let mut local_max_loc = Point::default();
+            min_max_loc(
+                &result,
+                None,
+                Some(&mut local_max_val),
+                None,
+                Some(&mut local_max_loc),
+                &no_array(),
+            )?;
+            if local_max_val > max_val {
+                max_val = local_max_val;
+                max_loc = local_max_loc;
+            }
+            scale += 0.05;
+        }
+    }
+    Ok((max_val, max_loc))
 }

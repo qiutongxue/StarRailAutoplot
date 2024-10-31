@@ -5,10 +5,10 @@ use std::{
 };
 
 use crate::{
-    automation::Automation,
+    automation::{Automation, Crop},
     error::{SrPlotError, SrPlotResult},
     input::Input,
-    utils::{get_window, transform_crop},
+    utils::get_window,
 };
 
 use colored::Colorize;
@@ -76,19 +76,20 @@ impl Plot {
         if let Some(window) = get_window(&game_title_name) {
             arc_self.try_lock()?.is_window_exist = true;
             if window.is_active() {
-                {
-                    let mut lock = arc_self.try_lock()?;
-                    handle_status_change(&mut lock.is_window_active, true, || {
-                        log::info!("{}", "游戏窗口已激活！正在执行中……".green().bold())
-                    });
-                }
+                let mut lock = arc_self.try_lock()?;
+                handle_status_change(&mut lock.is_window_active, true, || {
+                    log::info!("{}", "游戏窗口已激活！正在执行中……".green().bold())
+                });
+
                 let (width, height) = (window.width(), window.height());
                 let (x, y) = (window.x() as u32, window.y() as u32);
 
                 // 记录窗口位置，点击的时候要用
-                arc_self.try_lock()?.region = Some((x, y, width, height));
+                lock.region = Some((x, y, width, height));
 
-                let auto = arc_self.try_lock()?.auto.clone();
+                let auto = lock.auto.clone();
+
+                drop(lock);
                 let mut auto = auto.try_lock()?;
                 auto.take_screenshot(Some(transform_crop(START_IMAGE_CROP, width, height)))?;
 
@@ -116,15 +117,14 @@ impl Plot {
                     // 点击选项
                     let _ = auto.click_element(
                         (select_img.0, &select_img.1),
-                        0.9,
+                        0.85,
                         scale_range,
                         transform_crop(SELECT_IMAGE_CROP, width, height),
                     );
                 }
                 log::debug!("执行完毕！总耗时：{}ms", time.elapsed().as_millis());
             } else {
-                let mut lock = arc_self.try_lock()?;
-                handle_status_change(&mut lock.is_window_active, false, || {
+                handle_status_change(&mut arc_self.try_lock()?.is_window_active, false, || {
                     log::warn!("{}", "检测到游戏窗口未激活，停止执行！".blue().bold())
                 });
             }
@@ -177,4 +177,13 @@ fn handle_status_change(status: &mut bool, target: bool, event: impl FnOnce() ->
         *status = target;
         event();
     }
+}
+
+pub fn transform_crop(crop: (f32, f32, f32, f32), w: u32, h: u32) -> Crop {
+    (
+        (crop.0 * w as f32) as u32,
+        (crop.1 * h as f32) as u32,
+        (crop.2 * w as f32) as u32,
+        (crop.3 * h as f32) as u32,
+    )
 }
