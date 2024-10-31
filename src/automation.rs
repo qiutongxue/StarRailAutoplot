@@ -1,8 +1,5 @@
-use std::{
-    collections::HashMap,
-    thread,
-    time::{self, Duration},
-};
+use std::collections::HashMap;
+use std::time::Instant;
 
 use image::{codecs::bmp::BmpEncoder, RgbaImage};
 use opencv::core::{Mat, MatTraitConst, Size};
@@ -41,43 +38,30 @@ impl Automation {
             window_title: window_title.to_owned(),
         }
     }
-    pub fn take_screenshot(&mut self, crop: Option<Crop>) {
-        let timer = time::Instant::now();
-        loop {
-            let result = screenshot::take_screenshot(&self.window_title, crop).ok();
-            if let Some((screenshot, screenshot_pos, screenshot_factor)) = result {
-                self.screenshot = Some(screenshot);
-                self.screenshot_pos = Some(screenshot_pos);
-                self.screenshot_factor = screenshot_factor;
-                log::debug!(
-                    "截图成功，耗时：{}ms, 截图区域：{:?}， 缩放比例：{:.2}",
-                    timer.elapsed().as_millis(),
-                    screenshot_pos,
-                    screenshot_factor
-                );
-                break;
-            } else {
-                log::error!("截图失败，可能未找到游戏窗口");
-            }
-            thread::sleep(Duration::from_secs(1));
-            if timer.elapsed().as_secs() > 10 {
-                log::error!("截图超时");
-                break;
-            }
-        }
+
+    pub fn take_screenshot(&mut self, crop: Option<Crop>) -> SrPlotResult<()> {
+        let timer = Instant::now();
+
+        let (screenshot, screenshot_pos, screenshot_factor) =
+            screenshot::take_screenshot(&self.window_title, crop)?;
+        self.screenshot = Some(screenshot);
+        self.screenshot_pos = Some(screenshot_pos);
+        self.screenshot_factor = screenshot_factor;
+        log::debug!(
+            "截图成功，耗时：{}ms, 截图区域：{:?}，缩放比例：{:.2}",
+            timer.elapsed().as_millis(),
+            screenshot_pos,
+            screenshot_factor
+        );
+        Ok(())
     }
 
     pub fn find_element(
         &mut self,
         target: (&'static str, &[u8]),
         threshold: f64,
-        take_screenshot: bool,
-        scale_range: Option<ScaleRange>,
-        crop: Option<Crop>,
+        scale_range: ScaleRange,
     ) -> SrPlotResult<Option<Coordinate>> {
-        if take_screenshot {
-            self.take_screenshot(crop);
-        }
         log::debug!("scale_range: {:?}", scale_range);
         let (target_name, target) = target;
         if !self.cache.contains_key(target_name) {
@@ -102,7 +86,7 @@ impl Automation {
         };
 
         let (match_val, match_loc) =
-            scale_and_match_template(&screenshot, template, threshold, scale_range)?;
+            scale_and_match_template(&screenshot, template, threshold, scale_range.into())?;
 
         log::debug!("目标图片：{}, 相似度：{:.2}", target_name, match_val);
 
@@ -123,10 +107,11 @@ impl Automation {
         &mut self,
         target: (&'static str, &[u8]),
         threshold: f64,
-        crop: Option<Crop>,
-        scale_range: Option<ScaleRange>,
+        scale_range: ScaleRange,
+        crop: Crop,
     ) -> SrPlotResult<()> {
-        let coordinates = self.find_element(target, threshold, true, scale_range, crop)?;
+        self.take_screenshot(crop.into())?;
+        let coordinates = self.find_element(target, threshold, scale_range)?;
         if let Some(coordinates) = coordinates {
             log::debug!("coordinates: {:?}", coordinates);
             self.click_element_with_pos(coordinates)?;
