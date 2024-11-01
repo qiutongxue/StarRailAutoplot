@@ -90,14 +90,10 @@ impl Plot {
         };
 
         for img in &self.start_img {
-            if self
-                .auto
-                .find_element((img.0, &img.1), 0.9, scale_range)?
-                .is_some()
-            {
+            if self.auto.find_element(img, 0.9, scale_range)?.is_some() {
                 self.auto.take_screenshot(SELECT_IMAGE_CROP.into())?;
                 match self.auto.find_element(
-                    (self.select_img.0, &self.select_img.1),
+                    &self.select_img,
                     0.88, // 遇到过 0.89 匹配不上，所以降低 threshold
                     scale_range,
                 )? {

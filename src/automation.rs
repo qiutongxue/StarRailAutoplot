@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use image::{codecs::bmp::BmpEncoder, RgbaImage};
+use image::codecs::bmp::BmpEncoder;
+use image::{ImageBuffer, Rgba};
 use opencv::core::{min_max_loc, no_array, Mat, MatTraitConst, Size};
 
 use opencv::imgproc::{match_template_def, resize, InterpolationFlags, TemplateMatchModes};
@@ -40,7 +41,7 @@ impl Region {
 }
 
 pub struct Automation {
-    screenshot: Option<RgbaImage>,
+    screenshot_mat: Option<Mat>,
     screenshot_pos: Option<Region>,
     screenshot_factor: f64,
     window_title: String,
@@ -51,7 +52,7 @@ pub struct Automation {
 impl Automation {
     pub fn new(window_title: &str) -> Self {
         Self {
-            screenshot: None,
+            screenshot_mat: None,
             screenshot_pos: None,
             screenshot_factor: 1.0,
             window_region: None,
@@ -65,10 +66,17 @@ impl Automation {
 
         let (screenshot, screenshot_pos, screenshot_factor, window_region) =
             screenshot::take_screenshot(&self.window_title, crop)?;
-        self.screenshot = Some(screenshot);
         self.screenshot_pos = Some(screenshot_pos);
         self.window_region = Some(window_region);
         self.screenshot_factor = screenshot_factor;
+        self.screenshot_mat = {
+            let image = encode_image(&screenshot)?;
+            Some(imdecode(
+                &image.as_slice(),
+                ImreadModes::IMREAD_COLOR as i32,
+            )?)
+        };
+
         log::debug!(
             "截图成功，耗时：{}ms, 截图区域：{:?}，缩放比例：{:.2}",
             timer.elapsed().as_millis(),
@@ -80,35 +88,30 @@ impl Automation {
 
     pub fn find_element(
         &mut self,
-        target: (&'static str, &[u8]),
+        target: &(&'static str, Vec<u8>),
         threshold: f64,
         scale_range: Option<ScaleRange>,
     ) -> SrPlotResult<Option<Coordinate>> {
         log::debug!("scale_range: {:?}", scale_range);
-        let (target_name, target) = target;
-        if !self.cache.contains_key(target_name) {
-            let template = imdecode(&target, ImreadModes::IMREAD_COLOR as i32)?;
-            self.cache.insert(target_name.to_string(), template);
-        }
+        let (target_name, target_data) = target;
 
-        let template = self.cache.get(target_name).ok_or(SrPlotError::Unexcepted)?;
-
-        let screenshot = {
-            let image = self.screenshot.as_ref().ok_or(SrPlotError::Unexcepted)?;
-            let mut buffer =
-                Vec::with_capacity(image.width() as usize * image.height() as usize + 1000);
-            let mut encoder = BmpEncoder::new(&mut buffer);
-            encoder.encode(
-                image,
-                image.width(),
-                image.height(),
-                image::ExtendedColorType::Rgba8,
-            )?;
-            imdecode(&buffer.as_slice(), ImreadModes::IMREAD_COLOR as i32)?
+        let template = {
+            if !self.cache.contains_key(*target_name) {
+                let template = imdecode(&target_data.as_slice(), ImreadModes::IMREAD_COLOR as i32)?;
+                self.cache.insert(target_name.to_string(), template);
+            }
+            self.cache
+                .get(*target_name)
+                .ok_or(SrPlotError::Unexcepted)?
         };
 
+        let screenshot = self
+            .screenshot_mat
+            .as_ref()
+            .ok_or(SrPlotError::Unexcepted)?;
+
         let (match_val, match_loc) =
-            scale_and_match_template(&screenshot, template, threshold, scale_range)?;
+            scale_and_match_template(screenshot, template, threshold, scale_range)?;
 
         log::debug!("目标图片：{}, 相似度：{:.2}", target_name, match_val);
 
@@ -173,71 +176,84 @@ impl Automation {
     }
 }
 
-pub fn scale_and_match_template(
+fn scale_and_match_template(
     screenshot: &Mat,
     template: &Mat,
     threshold: f64,
     scale_range: Option<(f64, f64)>,
 ) -> SrPlotResult<(f64, Point)> {
-    let mut result = Mat::default();
     log::debug!(
         "screenshot size: {:?}, template size: {:?}",
         screenshot.size(),
         template.size()
     );
-    match_template_def(
-        screenshot,
+
+    let result = match_template(screenshot, template, TemplateMatchModes::TM_CCOEFF_NORMED)?;
+    let (mut max_val, mut max_loc) = find_max_location(&result)?;
+
+    if scale_range.is_some() && (max_val.is_infinite() || max_val < threshold) {
+        let (scale_start, scale_end) = scale_range.unwrap();
+        let mut scale_factor = scale_start;
+        while scale_factor < scale_end + 0.0001 && max_val < threshold {
+            let scaled_template = resize_template(template, scale_factor)?;
+            let result = match_template(
+                screenshot,
+                &scaled_template,
+                TemplateMatchModes::TM_CCOEFF_NORMED,
+            )?;
+
+            let (local_max_val, local_max_loc) = find_max_location(&result)?;
+            if local_max_val > max_val {
+                max_val = local_max_val;
+                max_loc = local_max_loc;
+            }
+            scale_factor += 0.05;
+        }
+    }
+    Ok((max_val, max_loc))
+}
+
+fn resize_template(template: &Mat, scale_factor: f64) -> SrPlotResult<Mat> {
+    let mut scaled_template = Mat::default();
+    resize(
         template,
-        &mut result,
-        TemplateMatchModes::TM_CCOEFF_NORMED as i32,
+        &mut scaled_template,
+        Size::default(),
+        scale_factor,
+        scale_factor,
+        InterpolationFlags::INTER_AREA as i32,
     )?;
+    Ok(scaled_template)
+}
+
+fn find_max_location(src: &Mat) -> SrPlotResult<(f64, Point)> {
     let mut max_val = 0f64;
     let mut max_loc = Point::default();
     min_max_loc(
-        &result,
+        src,
         None,
         Some(&mut max_val),
         None,
         Some(&mut max_loc),
         &no_array(),
     )?;
-    if scale_range.is_some() && (max_val.is_infinite() || max_val < threshold) {
-        let (scale_start, scale_end) = scale_range.unwrap();
-        let mut scale = scale_start;
-        while scale < scale_end + 0.0001 {
-            let mut scaled_template = Mat::default();
-            resize(
-                template,
-                &mut scaled_template,
-                Size::default(),
-                scale,
-                scale,
-                InterpolationFlags::INTER_AREA as i32,
-            )?;
-            let mut result = Mat::default();
-            match_template_def(
-                &screenshot,
-                &scaled_template,
-                &mut result,
-                TemplateMatchModes::TM_CCOEFF_NORMED as i32,
-            )?;
-
-            let mut local_max_val = 0f64;
-            let mut local_max_loc = Point::default();
-            min_max_loc(
-                &result,
-                None,
-                Some(&mut local_max_val),
-                None,
-                Some(&mut local_max_loc),
-                &no_array(),
-            )?;
-            if local_max_val > max_val {
-                max_val = local_max_val;
-                max_loc = local_max_loc;
-            }
-            scale += 0.05;
-        }
-    }
     Ok((max_val, max_loc))
+}
+
+fn match_template(image: &Mat, templ: &Mat, method: TemplateMatchModes) -> SrPlotResult<Mat> {
+    let mut result = Mat::default();
+    match_template_def(image, templ, &mut result, method as i32).unwrap();
+    Ok(result)
+}
+
+fn encode_image(image: &ImageBuffer<Rgba<u8>, Vec<u8>>) -> SrPlotResult<Vec<u8>> {
+    let mut buffer = Vec::with_capacity(image.width() as usize * image.height() as usize + 1000);
+    let mut encoder = BmpEncoder::new(&mut buffer);
+    encoder.encode(
+        image,
+        image.width(),
+        image.height(),
+        image::ExtendedColorType::Rgba8,
+    )?;
+    Ok(buffer)
 }
