@@ -7,7 +7,7 @@ edition = "2021"
 opencv = { version = "0.93", features = ["clang-runtime"] }
 enigo = "0.2"
 image = "0.25"
-simple_logger = { version = "5", features = ["colors"] }
+simple_logger = { version = "5", features = ["colors", "timestamps"] }
 log = "0.4"
 thiserror = "1.0"
 windows = { version = "0.58", features = [
@@ -21,3 +21,4 @@ windows = { version = "0.58", features = [
 sysinfo = "0.32"
 unicode-width = "0.2"
 colored = "2"
+time = { version = "0.3", features = ["macros"] }

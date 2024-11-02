@@ -44,6 +44,10 @@ fn main() {
 fn setup() {
     SimpleLogger::new()
         .with_level(log::LevelFilter::Info)
+        .with_local_timestamps()
+        .with_timestamp_format(time::macros::format_description!(
+            "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:3]"
+        ))
         .init()
         .unwrap();
 }
@@ -52,6 +56,10 @@ fn setup() {
 fn setup() {
     SimpleLogger::new()
         .with_level(log::LevelFilter::Debug)
+        .with_local_timestamps()
+        .with_timestamp_format(time::macros::format_description!(
+            "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:3]"
+        ))
         .env()
         .init()
         .unwrap();

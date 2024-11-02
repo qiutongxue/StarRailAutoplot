@@ -1167,6 +1167,7 @@ dependencies = [
  "simple_logger",
  "sysinfo",
  "thiserror",
+ "time",
  "unicode-width",
  "windows 0.58.0",
 ]
