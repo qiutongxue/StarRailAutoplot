@@ -22,8 +22,7 @@ pub struct Plot {
     select_img: ImageFile,
     game_title_name: String,
     start_img: Vec<ImageFile>,
-    is_window_active: bool,
-    is_window_exist: bool,
+    game_status: GameStatus,
     auto: Automation,
 }
 
@@ -34,8 +33,7 @@ impl Plot {
             select_img,
             game_title_name,
             start_img,
-            is_window_active: false,
-            is_window_exist: false,
+            game_status: GameStatus::Uninitialized,
         }
     }
 
@@ -50,26 +48,16 @@ impl Plot {
 
     fn check_game_status(&mut self) -> SrPlotResult<()> {
         match get_window(&self.game_title_name) {
-            Some(window) => {
-                self.is_window_exist = true;
-                if window.is_active() {
-                    handle_status_change(&mut self.is_window_active, true, || {
-                        log::info!("{}", "游戏窗口已激活！正在执行中……".green().bold())
-                    });
-                    self.autoplot(&window)?;
-                } else {
-                    handle_status_change(&mut self.is_window_active, false, || {
-                        log::warn!("{}", "检测到游戏窗口未激活，停止执行！".blue().bold())
-                    });
-                }
+            Some(window) if window.is_active() => {
+                self.game_status.set(GameStatus::Active);
+                self.autoplot(&window)?;
             }
             None => {
-                self.is_window_active = false;
-                handle_status_change(&mut self.is_window_exist, false, || {
-                    log::warn!("{}", "未检测到游戏窗口，等待游戏启动……".cyan().bold());
-                });
+                self.game_status.set(GameStatus::NotFound);
             }
+            _ => self.game_status.set(GameStatus::Inactive),
         }
+
         Ok(())
     }
 
@@ -110,9 +98,32 @@ impl Plot {
     }
 }
 
-fn handle_status_change<T: Eq>(status: &mut T, target: T, event: impl FnOnce()) {
-    if *status != target {
-        *status = target;
-        event();
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum GameStatus {
+    Uninitialized,
+    Active,
+    Inactive,
+    NotFound,
+}
+
+impl GameStatus {
+    fn set(&mut self, status: GameStatus) {
+        if *self != status {
+            *self = status;
+            self.log();
+        }
+    }
+
+    fn log(&self) {
+        match self {
+            GameStatus::Active => log::info!("{}", "游戏窗口已激活！正在执行中……".green().bold()),
+            GameStatus::Inactive => {
+                log::warn!("{}", "检测到游戏窗口未激活".blue().bold())
+            }
+            GameStatus::NotFound => {
+                log::warn!("{}", "未检测到游戏窗口，等待游戏启动……".cyan().bold())
+            }
+            GameStatus::Uninitialized => log::error!("{}", "未知错误".red().bold()),
+        }
     }
 }
