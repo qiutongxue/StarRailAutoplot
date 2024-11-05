@@ -13,31 +13,8 @@ const WELCOME: &str = r#"
 
 fn main() {
     setup();
-
     println!("{}", hr(WELCOME));
-
-    let image_files = vec![
-        ("start.png", include_bytes!("../assets/start.png").to_vec()),
-        (
-            "start_ps5.png",
-            include_bytes!("../assets/start_ps5.png").to_vec(),
-        ),
-        (
-            "start_xbox.png",
-            include_bytes!("../assets/start_xbox.png").to_vec(),
-        ),
-    ];
-
-    let select_image = (
-        "select.png",
-        include_bytes!("../assets/select.png").to_vec(),
-    );
-
-    thread::spawn(|| {
-        Plot::new("崩坏：星穹铁道".to_string(), select_image, image_files).run();
-    })
-    .join()
-    .unwrap();
+    thread::spawn(|| Plot::default().run()).join().unwrap();
 }
 
 #[cfg(not(debug_assertions))]
