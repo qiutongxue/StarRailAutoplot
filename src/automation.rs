@@ -189,27 +189,31 @@ fn scale_and_match_template(
     );
 
     let result = match_template(screenshot, template, TemplateMatchModes::TM_CCOEFF_NORMED)?;
-    let (mut max_val, mut max_loc) = find_max_location(&result)?;
 
-    if scale_range.is_some() && (max_val.is_infinite() || max_val < threshold) {
-        let (scale_start, scale_end) = scale_range.unwrap();
-        let mut scale_factor = scale_start;
-        while scale_factor < scale_end + 0.0001 && max_val < threshold {
-            let scaled_template = resize_template(template, scale_factor)?;
-            let result = match_template(
-                screenshot,
-                &scaled_template,
-                TemplateMatchModes::TM_CCOEFF_NORMED,
-            )?;
+    let (max_val, max_loc) = match scale_range {
+        Some((scale_start, scale_end)) => {
+            let (mut max_val, mut max_loc) = (0f64, Point::default());
+            let mut scale_factor = scale_start;
+            while scale_factor < scale_end + 0.0001 && max_val < threshold {
+                let scaled_template = resize_template(template, scale_factor)?;
+                let result = match_template(
+                    screenshot,
+                    &scaled_template,
+                    TemplateMatchModes::TM_CCOEFF_NORMED,
+                )?;
 
-            let (local_max_val, local_max_loc) = find_max_location(&result)?;
-            if local_max_val > max_val {
-                max_val = local_max_val;
-                max_loc = local_max_loc;
+                let (local_max_val, local_max_loc) = find_max_location(&result)?;
+                if local_max_val > max_val {
+                    max_val = local_max_val;
+                    max_loc = local_max_loc;
+                }
+                scale_factor += 0.05;
             }
-            scale_factor += 0.05;
+            (max_val, max_loc)
         }
-    }
+        None => find_max_location(&result)?,
+    };
+
     Ok((max_val, max_loc))
 }
 
