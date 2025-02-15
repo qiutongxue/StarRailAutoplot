@@ -4,7 +4,7 @@ version = "0.1.7"
 edition = "2021"
 
 [dependencies]
-opencv = { version = "0.93", features = ["clang-runtime"] }
+opencv = { version = "0.93", default-features = false, features = ["imgproc", "imgcodecs", "clang-runtime"]}
 enigo = "0.2"
 image = "0.25"
 simple_logger = { version = "5", features = ["colors", "timestamps"] }
@@ -22,3 +22,10 @@ sysinfo = "0.32"
 unicode-width = "0.2"
 colored = "2"
 time = { version = "0.3", features = ["macros"] }
+
+[package.metadata.vcpkg]
+git = "https://github.com/microsoft/vcpkg"
+rev = "94a50e8"
+
+[package.metadata.vcpkg.target]
+x86_64-pc-windows-msvc = { triplet = "x64-windows-static-release", dependencies = ["opencv4[contrib,nonfree]"] }
