@@ -1,0 +1,130 @@
+# This is a basic workflow to help you get started with Actions
+
+name: build
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the "main" branch
+#   push:
+#     branches: [ "main" ]
+#   pull_request:
+#     branches: [ "main" ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# Generates binaries for different platforms, which will be uploaded to the Actions page.
+# We then manually uplaod them into the Release's assets.
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:       
+  windows-build:
+    # The type of runner that the job will run on
+    runs-on: windows-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v3
+      
+      # Install rust
+      - name: Install rust
+        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+      # DEPRECATED: vcpkg takes up WAY too much space for some reason.  Use chocolatey instead
+      # Install vcpkg
+      # - name: run-vcpkg
+      #   # You may pin to the exact commit or the version.
+      #   # uses: lukka/run-vcpkg@c62308335e15360efe9eba11298318f7f6a3606e
+      #   uses: lukka/run-vcpkg@v10.4
+      #   with:
+      #     # Specify the full SHA-1 hash of a Git commit (not a branch name, nor a tag!) that establishes which version of vcpkg needs to be used. When using vcpkg as a Git submodule, this input is *not* needed as implicitly specified by the submodule.
+      #     vcpkgGitCommitId: d52632d9a0c4a5b57de285b1e03722a067dd80eb
+
+      - name: Chocolatey Action
+        # You may pin to the exact commit or the version.
+        # uses: crazy-max/ghaction-chocolatey@0e015857dd851f84fcb7fb53380eb5c4c8202333
+        uses: crazy-max/ghaction-chocolatey@v3.0.0
+        with:
+          # Arguments to pass to Chocolatey
+          # don't install opencv here as we build the staticlib below
+          args: install llvm wget strawberryperl
+          # Docker image to use
+          #image: # optional, default is ghcr.io/crazy-max/ghaction-chocolatey
+
+      # msbuild as our underlying builder
+      #- name: Add msbuild to PATH
+      #  uses: microsoft/setup-msbuild@v1.3.1
+
+      # Note: in order to set config profile to Release and use a prefix path, we have to separate cmake steps for building/installing.  CMake nuances...
+      #    See https://stackoverflow.com/questions/19024259/how-to-change-the-build-type-to-release-mode-in-cmake, https://stackoverflow.com/questions/50028570/is-it-possible-to-build-cmake-projects-directly-using-msbuildtools, https://cmake.org/cmake/help/latest/variable/CMAKE_INSTALL_PREFIX.html
+      # Pull opencv source, unzip, configure cmake, build, and install
+      # Disable image formats like jpeg, png, tiff, as we use rust image crate instead.  See https://docs.opencv.org/4.x/db/d05/tutorial_config_reference.html
+      # Inspired from https://github.com/twistedfall/opencv-rust/issues/364
+      # - name: Install OpenCV static lib
+        # run: |
+          # wget -O opencv.zip https://github.com/opencv/opencv/archive/refs/tags/4.8.1.zip
+          # wget -O opencv_contrib.zip https://github.com/opencv/opencv_contrib/archive/refs/tags/4.8.1.zip
+          # unzip opencv.zip && rm opencv.zip
+          # unzip opencv_contrib.zip && rm opencv_contrib.zip
+          # mkdir -p build && cd build
+          # cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=NO -DCMAKE_INSTALL_PREFIX="D:/opt/opencv" -DBUILD_DOCS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DWITH_PNG=OFF -DWITH_JPEG=OFF -DWITH_TIFF=OFF -DWITH_WEBP=OFF -DWITH_OPENJPEG=OFF -DWITH_JASPER=OFF -DWITH_OPENEXR=OFF -DWITH_V4L=OFF  -DBUILD_opencv_java=OFF -DBUILD_opencv_python=OFF -DOPENCV_EXTRA_MODULES_PATH="../opencv_contrib-4.8.1/modules" ../opencv-4.8.1
+          # cmake --build . --target install --config Release --parallel 8
+          # cmake --install . --prefix D:/opt/opencv
+          # cd ..
+            
+      # - name: Install Clang
+      #   # You may pin to the exact commit or the version.
+      #   # uses: egor-tensin/setup-clang@01d437c0618e76d3c44e7d58f5d175c75cb37bac
+      #   uses: egor-tensin/setup-clang@v1
+      
+      - name: Install cargo-vcpkg
+        run: cargo install cargo-vcpkg
+
+      - name: Build static opencv lib
+        run: cargo vcpkg -v build
+        
+      # # Install opencv
+      # - name: Install opencv
+      #   run: |
+      #     vcpkg update
+      #     vcpkg install llvm opencv4[contrib,nonfree]
+
+      # Set opencv dynamic link env vars
+      # - name: OpenCV Dynamic Link Env Vars
+      #   run: |
+
+      # OPENCV_LINK_LIBS includes both opencv modules and 3rdparty.  Note: 3rdparty libs may be named differently on different platforms
+      # OPENCV_LINK_PATHS points to the installed staticlib folder after cmake install
+      # OPENCV_INCLUDE_PATHS points to installed include folder after cmake install
+      # OPENCV_MSVC_CRT is for CRT library to be static or dynamic using windows MSVC: https://github.com/twistedfall/opencv-rust/blob/master/README.md#troubleshooting
+      # Build
+      - name: Build
+        #run: $env:OPENCV_LINK_LIBS=$(Get-ChildItem -Path C:\tools -Recurse -Filter 'opencv_world*.lib' | Select-Object -first 1 | Select-Object -ExpandProperty Name); $env:OPENCV_LINK_PATHS=$(Get-ChildItem -Path C:\tools -Recurse -Filter 'opencv_world*.lib' | Select-Object -first 1 | Select-Object -ExpandProperty FullName | Split-Path -parent); $env:OPENCV_INCLUDE_PATHS="C:\tools\opencv\build\include"; cargo build --release
+        run: cargo build --release
+          # $env:OPENCV_LINK_LIBS="opencv_core481,opencv_videoio481,opencv_imgcodecs481,opencv_imgproc481,ippiw,ittnotify,ippicvmt,zlib"
+          # $env:OPENCV_LINK_PATHS="D:/opt/opencv/x64/vc17/staticlib"
+          # $env:OPENCV_INCLUDE_PATHS="D:/opt/opencv/include"
+          # $env:OPENCV_MSVC_CRT="static"
+          
+        
+      # Ready artifacts for upload
+      # - name: Prepare Artifacts
+        # run: |
+          # $env:MEDIATOASCII_VERSION=$(perl -ne 'print "$1\\n" if /^version\s*=\s*"(.*?)"/' Cargo.toml)
+          # Compress-Archive -Path target/release/mediatoascii.exe -Destination ./mediatoascii-x86_64-pc-windows-gnu-$MEDIATOASCII_VERSION.zip 
+        
+      # Upload artifact: https://github.com/actions/upload-artifact
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarRailAutoPlot
+          path: target/release/sr_plot_rs.exe
+          retention-days: 1
+        
+      # Upload artifact: https://github.com/actions/upload-artifact
+      # - name: Upload Artifacts
+      #   uses: actions/upload-artifact@v3
+      #   with:
+      #     name: opencv-error-log
+      #     path: D:\a\media-to-ascii\media-to-ascii\vcpkg\buildtrees\opencv4\install-x86-windows-rel-out.log
+      #     retention-days: 1
