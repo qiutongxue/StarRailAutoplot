@@ -24,6 +24,7 @@ colored = "2"
 time = { version = "0.3", features = ["macros"] }
 is_elevated = "0.1.2"
 
+# 静态编译方法：https://github.com/twistedfall/opencv-rust/issues/581#issuecomment-2167130325
 [package.metadata.vcpkg]
 git = "https://github.com/microsoft/vcpkg"
 rev = "94a50e8"
