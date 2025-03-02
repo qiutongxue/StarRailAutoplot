@@ -2,6 +2,7 @@ use simple_logger::SimpleLogger;
 use sr_plot_rs::plot::Plot;
 use std::{fmt::Write, thread};
 use unicode_width::UnicodeWidthStr;
+use is_elevated::is_elevated;
 
 const WELCOME: &str = r#"
 欢迎使用「崩坏：星穹铁道」自动对话程序
@@ -12,6 +13,11 @@ const WELCOME: &str = r#"
 "#;
 
 fn main() {
+    if !is_elevated() {
+        println!("{}", hr("请使用「管理员身份」运行此程序\n按回车键<Enter>退出"));
+        let _ = std::io::stdin().read_line(&mut String::new());
+        return;
+    }
     setup();
     println!("{}", hr(WELCOME));
     thread::spawn(|| Plot::default().run()).join().unwrap();
