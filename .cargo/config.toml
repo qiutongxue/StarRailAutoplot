@@ -1,5 +1,5 @@
 [env]
-OPENCV_INCLUDE_PATHS= "D:\\OpenCV\\opencv\\build\\include"
-OPENCV_LINK_PATHS= "D:\\OpenCV\\opencv\\build\\x64\\vc16\\lib"
-OPENCV_LINK_LIBS="opencv_world4100.lib"
+OPENCV_INCLUDE_PATHS= { value = "target\\vcpkg\\installed\\x64-windows-static-release\\include", relative = true }
+OPENCV_LINK_PATHS= { value = "target\\vcpkg\\installed\\x64-windows-static-release\\lib", relative = true }
+OPENCV_LINK_LIBS="opencv_core4.lib,opencv_imgproc4.lib,zlib.lib,opencv_imgcodecs4.lib,lzma.lib,tiff.lib,jpeg.lib,libpng16.lib,opencv_dnn4.lib,libwebp.lib,libwebpdecoder.lib,libprotoc.lib,libprotobuf.lib,libsharpyuv.lib"
 OPENCV_MSVC_CRT="static"
